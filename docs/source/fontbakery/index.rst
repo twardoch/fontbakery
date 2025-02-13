@@ -8,9 +8,9 @@ A single-page index of all source modules is available in :ref:`modindex`.
    :maxdepth: 1
 
    callable
+   checks/index
    checkrunner
    cli
-   commands/index
    constants
    fonts_public_pb2
    fonts_profile

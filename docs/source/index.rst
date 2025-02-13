@@ -1,13 +1,13 @@
 .. image:: ../../data/logo.png
 
-|PyPI| |PyVersion| |TravisBuild| |License|
+|PyPI| |PyVersion| |License|
 
 Welcome to the Font Bakery Documentation!
 =========================================
 
 Font Bakery is command-line tool for checking the quality of font projects.  
 
-For a quick overview, check out the `list of checks <https://font-bakery.readthedocs.io/en/stable/fontbakery/profiles/index.html>`_ currently offered.
+For a quick overview, check out the `list of checks <https://fontbakery.readthedocs.io/en/latest/fontbakery/profiles/index.html>`_ currently offered.
 
 .. raw:: html
 
@@ -15,7 +15,7 @@ For a quick overview, check out the `list of checks <https://font-bakery.readthe
         <iframe src="https://www.youtube.com/embed/vFjQEkJv9BQ" frameborder="0" allowfullscreen style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"></iframe>
     </div>
 
-The project is licensed under the `Apache v2.0 license <https://github.com/googlefonts/fontbakery/blob/main/LICENSE.txt>`_ and the source is available at https://github.com/googlefonts/fontbakery.
+The project is licensed under the `Apache v2.0 license <https://github.com/fonttools/fontbakery/blob/main/LICENSE.txt>`_ and the source is available at https://github.com/fonttools/fontbakery.
 
 .. toctree::
    :maxdepth: 2
@@ -68,10 +68,6 @@ Indices
    :alt: Python versions
    :target: https://pypi.python.org/pypi/fontbakery/
 
-.. |TravisBuild| image:: https://travis-ci.org/googlefonts/fontbakery.svg
-   :alt: Travis CI Build
-   :target: https://travis-ci.org/googlefonts/fontbakery
-
 .. |License| image:: https://img.shields.io/badge/License-Apache%202.0-brightgreen.svg
    :alt: License
-   :target: https://github.com/googlefonts/fontbakery/blob/main/LICENSE.txt
+   :target: https://github.com/fonttools/fontbakery/blob/main/LICENSE.txt

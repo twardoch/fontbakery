@@ -13,21 +13,19 @@
 import os
 import sys
 
-import recommonmark.parser
-
 sys.path.insert(0, os.path.abspath("../Lib"))
 
 
 # -- Project information -----------------------------------------------------
 
 project = "Font Bakery"
-copyright = "2023 The Font Bakery Authors"
+copyright = "2024 The Font Bakery Authors"
 author = "The Font Bakery Authors"
 
 # The short X.Y version
-version = "0.8"
+version = "0.13"
 # The full version, including alpha/beta/rc tags
-release = "0.8.13"
+release = "0.13.2"
 
 
 # -- General configuration ---------------------------------------------------
@@ -40,17 +38,14 @@ needs_sphinx = "4.3"
 # or your custom ones.
 extensions = [
     "sphinx.ext.autodoc",
-    "sphinx.ext.viewcode",
-    "fontbakery.sphinx_extensions.linkcode",
+    "sphinx.ext.linkcode",
     "fontbakery.sphinx_extensions.profile",
     "sphinx.ext.napoleon",
-    "recommonmark",
+    "myst_parser",
 ]
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
-
-source_parsers = {".md": recommonmark.parser.CommonMarkParser}
 
 # The suffix(es) of source filenames.
 # You can specify multiple suffix as a list of string:
@@ -64,7 +59,7 @@ main_doc = "index"
 #
 # This is also used if you do content translation via gettext catalogs.
 # Usually you set "language" from the command line for these cases.
-language = None
+language = "en"
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
@@ -91,7 +86,7 @@ html_theme_options = {"display_version": False}
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
-html_static_path = ["_static"]
+# html_static_path = ["_static"]
 
 # Custom sidebar templates, must be a dictionary that maps document names
 # to template names.
@@ -189,9 +184,9 @@ def linkcode_resolve(domain, info):
     #
     # On GitHub, we can link to a tag i.e. a release tag such as "v0.7.2"
     # as seen on this URL:
-    # https://github.com/googlefonts/fontbakery/tree/v0.7.2/Lib/fontbakery/profiles
+    # https://github.com/fonttools/fontbakery/tree/v0.7.2/Lib/fontbakery/profiles
 
-    tree = "v0.8.13"
+    tree = release
     # It's not planned for us to get the line number :-(
     # I had to hammer this data into the info.
     if "lineno" in info:
@@ -199,6 +194,6 @@ def linkcode_resolve(domain, info):
     else:
         lineno = ""
 
-    return "https://github.com/googlefonts/fontbakery/tree/{}/Lib/{}.py{}".format(
+    return "https://github.com/fonttools/fontbakery/tree/{}/Lib/{}.py{}".format(
         tree, filename, lineno
     )

@@ -2,17 +2,17 @@
 
 ## Code Testing
 
-`tox` and `coverage` are used to execute the Font Bakery test suite and line coverage assessment, respectively.  
+`pytest` and `coverage` are used to execute the Font Bakery test suite and line coverage assessment, respectively.
 
 Use the following command to run all tests:
 
 ```
-$ tox
+$ pytest -x tests
 ```
 
 The coverage report can be found at the end of the test results that are printed to the standard output/error stream.
 
-Continuous integration testing is performed on GitHub Actions. Test jobs can be found at [https://github.com/googlefonts/fontbakery/actions](https://github.com/googlefonts/fontbakery/actions).
+Continuous integration testing is performed on GitHub Actions. Test jobs can be found at [https://github.com/fonttools/fontbakery/actions](https://github.com/fonttools/fontbakery/actions).
 
 ## Updating the distribution package
 
@@ -30,6 +30,8 @@ git status
 # Create a branch for the final tweaks prior to release:
 git checkout -b preparing_v0_8_2
 
+# Make sure googlefonts "always latest" dependencies are up-to-date at pyproject.toml
+
 # Update the cached list of vendor IDs:
 wget https://docs.microsoft.com/en-us/typography/vendors/ --output-document=Lib/fontbakery/data/fontbakery-microsoft-vendorlist.cache
 git add -p
@@ -43,11 +45,15 @@ vim Lib/fontbakery/constants.py
 git add -p
 git commit -m "Updating LATEST_TTFAUTOHINT_VERSION"
 
-# update the docs so that https://font-bakery.readthedocs.io/
+# update the docs so that https://fontbakery.readthedocs.io/
 # displays the correct version number
 vim docs/source/conf.py
 git add -p
 git commit -m "update version on docs/source/conf.py"
+
+# See if there's any experimental check that could be made effective (non-experimental)
+# in the new release and update CHANGELOG accordingly.
+git grep "experimental=\"Since"
 
 vim CHANGELOG.md
 git add -p
@@ -64,10 +70,8 @@ git checkout main
 git fetch upstream
 git rebase upstream/main
 
-## Optionally install tox so that we can also
-## run our code tests locally
-# pip install tox
-# tox
+## Optionally run our code tests locally
+pytest -x tests
 
 # If all is good, then make the actual release:
 # Register a git tag for this release and publish it
@@ -78,13 +82,14 @@ git push upstream --tags
 # generate the package and automatically publish it on PyPI.
 # A GitHub release will also be created automatically.
 
-# Close the current milestone on the GitHub issue tracker
-# moving to a future milestone any of its issue that we've
-# not been able to close yet.
-# https://github.com/googlefonts/fontbakery/milestones
+# ATTENTION!
+# We need to manually set this release to be considered the latest one.
+# And also uncheck its "pre-release" checkbox!
 
-# And after a new release is also a good moment to update the versions
-# of dependencies on requirements.txt ;-)
+# Close the current milestone on the GitHub issue tracker
+# moving to a future milestone any of its issues that we've
+# not been able to close yet.
+# https://github.com/fonttools/fontbakery/milestones
 ```
 
 ## Cached Vendor ID data

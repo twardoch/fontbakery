@@ -1,253 +1,144 @@
 """Reporter class that renders report as a HTML document."""
 
-import collections
-import html
-from typing import List, Dict
+from collections import defaultdict
+import os
 import cmarkgfm
 from cmarkgfm.cmark import Options as cmarkgfmOptions
-
+from jinja2 import ChoiceLoader, Environment, PackageLoader, Template, select_autoescape
+from markupsafe import Markup
 
 from fontbakery.reporters.serialize import SerializeReporter
-from fontbakery.utils import unindent_and_unwrap_rationale, html5_collapsible
+from fontbakery import __version__ as fb_version
+from fontbakery.utils import unindent_and_unwrap_rationale
 
-LOGLEVELS = ["ERROR", "FAIL", "WARN", "SKIP", "INFO", "PASS", "DEBUG"]
-EMOTICON = {
-    "ERROR": "💥",
-    "FAIL": "🔥",
-    "WARN": "⚠️",
-    "INFO": "ℹ️",
-    "SKIP": "⏩",
-    "PASS": "✅",
-    "DEBUG": "🔎",
-}
-ISSUE_URL = "https://github.com/googlefonts/fontbakery/issues"
+LOGLEVELS = ["ERROR", "FATAL", "FAIL", "WARN", "SKIP", "INFO", "PASS", "DEBUG"]
+
+
+def emoticon(status):
+    return {
+        "ERROR": "💥",
+        "FATAL": "☠",
+        "FAIL": "🔥",
+        "WARN": "⚠️",
+        "INFO": "ℹ️",
+        "SKIP": "⏩",
+        "PASS": "✅",
+        "DEBUG": "🔎",
+    }.get(status, "❓")
+
+
+ISSUE_URL = "https://github.com/fonttools/fontbakery/issues"
+
+
+def percent_of(value, total=100):
+    return f"{round(value / total * 100)}%"
+
+
+def markdown(message):
+    return Markup(
+        cmarkgfm.github_flavored_markdown_to_html(
+            message or "", options=cmarkgfmOptions.CMARK_OPT_UNSAFE
+        )
+    )
 
 
 class HTMLReporter(SerializeReporter):
     """Renders a report as a HTML document."""
 
-    def write(self):
-        with open(self.output_file, "w", encoding="utf-8") as fh:
-            fh.write(self.get_html())
-        print(f'A report in HTML format has been saved to "{self.output_file}"')
+    format_name = "HTML"
+    format = "html"
 
-    def get_html(self) -> str:
-        """Return complete report as a HTML string."""
-        data = self.getdoc()
-        num_checks = 0
-        body_elements = []
-
-        # Order by section first...
-        for section in data["sections"]:
-            section_name = html.escape(section["key"][0])
-            section_stati_of_note = (
-                e for e in section["result"].elements() if e != "PASS"
+    def template_engine(self) -> Template:
+        loaders = [PackageLoader("fontbakery.reporters", f"templates/{self.format}")]
+        try:
+            profile = self.runner.profile.name
+            loaders.insert(
+                0,
+                PackageLoader(
+                    "fontbakery.reporters", f"templates/{profile}/{self.format}"
+                ),
             )
-            if all([self.omit_loglevel(s) for s in section["result"].elements()]):
-                continue
-            section_stati = "".join(
-                EMOTICON[s] for s in sorted(section_stati_of_note, key=LOGLEVELS.index)
-            )
-            body_elements.append(f"<h2>{section_name} {section_stati}</h2>")
-
-            checks_by_id: Dict[str, List[Dict[str, str]]] = collections.defaultdict(
-                list
-            )
-            # ...and check second.
-            for cluster in section["checks"]:
-                if not isinstance(cluster, list):
-                    cluster = [cluster]
-                num_checks += len(cluster)
-                for check in cluster:
-                    checks_by_id[check["key"][1]].append(check)
-            for check, results in checks_by_id.items():
-                if all([self.omit_loglevel(result["result"]) for result in results]):
-                    continue
-                check_name = html.escape(check)
-                body_elements.append(f"<h3>{results[0]['description']}</h3>")
-                body_elements.append(f"<div>Check ID: {check_name}</div>")
-                body_elements.append(self.render_rationale(results[0], check))
-                for result in results:
-                    if self.omit_loglevel(result["result"]):
-                        continue
-                    if "filename" in result:
-                        body_elements.append(
-                            html5_collapsible(
-                                f"{EMOTICON[result['result']]} <strong>{result['filename']}</strong>",
-                                self.html_for_check(result),
-                            )
-                        )
-                    else:
-                        body_elements.append(
-                            html5_collapsible(
-                                f"{EMOTICON[result['result']]} <strong>Family check</strong>",
-                                self.html_for_check(result),
-                            )
-                        )
-
-        body_top = [
-            "<h1>Fontbakery Technical Report</h1>",
-            "<div>If you think a check is flawed or have an idea for a check, please "
-            f" file an issue at <a href='{ISSUE_URL}'>{ISSUE_URL}</a> and remember "
-            "to include a pointer to the repo and branch you're checking.</div>",
-        ]
-
-        if num_checks:
-            results_summary = [data["result"][k] for k in LOGLEVELS]
-            body_top.append(summary_table(*results_summary, num_checks))
-
-        omitted = [l for l in LOGLEVELS if self.omit_loglevel(l)]
-        if omitted:
-            body_top.append(
-                "<p><strong>Note:</strong>"
-                " The following loglevels were omitted in this report:"
-                f" {', '.join(omitted)}</p>"
-            )
-
-        body_elements[0:0] = body_top
-        return html5_document(body_elements)
-
-    def html_for_check(self, check) -> str:
-        """Return HTML string for complete single check."""
-        check["logs"].sort(key=lambda c: LOGLEVELS.index(c["status"]))
-        logs = "<ul>" + "".join([self.log_html(log) for log in check["logs"]]) + "</ul>"
-        return logs
-
-    def render_rationale(self, check, checkid) -> str:
-        if self.succinct or "rationale" not in check:
-            return ""
-        content = unindent_and_unwrap_rationale(check["rationale"], checkid)
-        return cmarkgfm.markdown_to_html(
-            content, options=cmarkgfmOptions.CMARK_OPT_UNSAFE
+        except ValueError:
+            pass  # No special templates for this profile
+        environment = Environment(
+            loader=ChoiceLoader(loaders), autoescape=select_autoescape()
         )
 
-    def log_html(self, log) -> str:
-        """Return single check sub-result string as HTML or not if below log
-        level."""
-        if not self.omit_loglevel(log["status"]):
-            emoticon = EMOTICON[log["status"]]
-            status = log["status"]
-            message = cmarkgfm.markdown_to_html(
-                log["message"], options=cmarkgfmOptions.CMARK_OPT_UNSAFE
+        def omitted(result):
+            # This is horribly polymorphic, sorry
+            if isinstance(result, list):  # I am cluster of checks
+                # Only omit if every check in the cluster should be omitted,
+                # otherwise there is useful information here.
+                return all(omitted(check) for check in result)
+            if "status" in result:  # I am a single subresult
+                return self.omit_loglevel(result["status"])
+            if "checks" in result:  # I am section
+                return all(
+                    [
+                        self.omit_loglevel(result["result"])
+                        for result in result["checks"]
+                    ]
+                )
+            if "result" in result:  # I am check
+                return self.omit_loglevel(result["result"])
+            # I'm just a string
+            return self.omit_loglevel(result)
+
+        environment.tests["omitted"] = omitted
+        environment.filters["percent_of"] = percent_of
+        environment.filters["markdown"] = markdown
+        environment.filters["emoticon"] = emoticon
+        environment.filters["basename"] = os.path.basename
+        environment.filters["unwrap"] = unindent_and_unwrap_rationale
+
+        return environment.get_template("main." + self.format.lower())
+
+    def template(self, data) -> str:
+        """Returns complete report as a HTML string."""
+        total = 0
+
+        # Rearrange the data so that checks in each section
+        # are clustered by id
+        for section in data["sections"]:
+            checks = section["checks"]
+            total += len(checks)
+            checks_by_id = defaultdict(list)
+            for check in checks:
+                checks_by_id[check["key"][1]].append(check)
+            section["clustered_checks"] = list(checks_by_id.values())
+            section["status_summary"] = sorted(
+                (e for e in section["result"].elements() if e != "PASS"),
+                key=LOGLEVELS.index,
             )
-            return (
-                "<li class='details_item'>"
-                f"<span class='details_indicator'>{emoticon} {status}</span>"
-                f"<span class='details_text'>{message}</span>"
-                "</li>"
+        if self.legacy_checkid_references:
+            deprecation_warning = (
+                "By late-December 2024, FontBakery version 0.13.0"
+                " introduced a new naming scheme for the check-IDs.<br>"
+                "<br>"
+                "Fontbakery detected usage of old IDs and performed an"
+                " automatic backwards-compatibility translation for you.<br>"
+                "This automatic translation will be deprecated in the next"
+                " major release.<br>"
+                "<br>"
+                "Please start using the new check-IDs as documented at"
+                " <a href='https://github.com/fonttools/fontbakery/blob/"
+                "31970cdc5807c3b75c2f9b6e223aca57ffda535f/Lib/"
+                "fontbakery/legacy_checkids.py'>"
+                "/Lib/fontbakery/legacy_checkids.py</a><br>"
+                "<br>"
+                "The following legacy check-IDs were detected:<br>"
+                f" - {'<br> - '.join(self.legacy_checkid_references)}<br>"
+                "<br>"
             )
-        return ""
+        else:
+            deprecation_warning = None
 
-
-def html5_document(body_elements) -> str:
-    """Return complete HTML5 document string."""
-
-    style = """
-            html {
-                font-family: sans-serif;
-            }
-
-            h2 {
-                margin-top: 2em;
-            }
-
-            h3 {
-                margin-bottom: 1px;
-            }
-
-            table {
-                border-collapse: collapse;
-            }
-
-            th,
-            td {
-                border: 1px solid #ddd;
-                padding: 0.5em
-            }
-
-            tr:nth-child(even) {
-                background-color: #f2f2f2;
-            }
-
-            tr {
-                text-align: left;
-            }
-
-            ul {
-                margin-top: 0;
-            }
-
-            .details_item {
-                list-style: none;
-                display: flex;
-                align-items: baseline;
-            }
-
-            .details_indicator {
-                flex: 0 0 5em;
-                font-weight: bold;
-                padding-right: 0.5em;
-                text-align: right;
-            }
-
-            .details_text {
-                flex: 1 0;
-            }
-            """
-    body = "\n".join(body_elements)
-    return f"""<!DOCTYPE html>
-                <html lang="en">
-                    <head>
-                        <meta charset="utf-8">
-                        <title>Fontbakery Check Report</title>
-                        <style>
-                            {style}
-                        </style>
-                    </head>
-                    <body>
-                    {body}
-                    </body>
-                </html>"""
-
-
-def summary_table(
-    errors: int,
-    fails: int,
-    warns: int,
-    skips: int,
-    infos: int,
-    passes: int,
-    debugs: int,
-    total: int,
-) -> str:
-    """Return summary table with statistics."""
-
-    # DEBUG messages are omitted for now...
-    return f"""<h2>Summary</h2>
-            <table>
-            <tr>
-                <th>{EMOTICON['ERROR']} ERROR</th>
-                <th>{EMOTICON['FAIL']} FAIL</th>
-                <th>{EMOTICON['WARN']} WARN</th>
-                <th>{EMOTICON['SKIP']} SKIP</th>
-                <th>{EMOTICON['INFO']} INFO</th>
-                <th>{EMOTICON['PASS']} PASS</th>
-            </tr>
-            <tr>
-                <td>{errors}</td>
-                <td>{fails}</td>
-                <td>{warns}</td>
-                <td>{skips}</td>
-                <td>{infos}</td>
-                <td>{passes}</td>
-            </tr>
-            <tr>
-                <td>{round(errors / total * 100)}%</td>
-                <td>{round(fails / total * 100)}%</td>
-                <td>{round(warns / total * 100)}%</td>
-                <td>{round(skips / total * 100)}%</td>
-                <td>{round(infos / total * 100)}%</td>
-                <td>{round(passes / total * 100)}%</td>
-            </tr>
-            </table>
-            """
+        return self.template_engine().render(
+            sections=data["sections"],
+            ISSUE_URL=ISSUE_URL,
+            fb_version=fb_version,
+            total=total,
+            summary={k: data["result"][k] for k in LOGLEVELS},
+            succinct=self.succinct,
+            deprecation_warning=deprecation_warning,
+        )

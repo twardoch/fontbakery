@@ -5,7 +5,6 @@ profiles
 .. toctree::
    :maxdepth: 1
 
-   proposals
    opentype
    universal
    adobefonts
@@ -13,16 +12,6 @@ profiles
    notofonts
    fontbureau
    fontwerk
+   microsoft
    fontval
-   ufo_sources
    iso15008
-   layout
-   outline
-   shaping
-   shared_conditions
-   googlefonts_conditions
-
-
-.. automodule:: fontbakery.profiles
-   :members:
-   :undoc-members:

@@ -1,6 +1,6 @@
-## Font Bakery Command Line Usage
+# Font Bakery Command Line Usage
 
-Install Font Bakery as a package with the instructions in the [Installation Guides](https://font-bakery.readthedocs.io/en/stable/user/installation/index.html), and you will have a `fontbakery` command in your `$PATH`.
+Install Font Bakery as a package with the instructions in the [Installation Guides](https://fontbakery.readthedocs.io/en/latest/user/installation/index.html), and you will have a `fontbakery` command in your `$PATH`.
 
 This has several subcommands, described in the help function:
 
@@ -16,7 +16,7 @@ This has several subcommands, described in the help function:
         check-googlefonts
         check-notofonts
         check-profile
-        check-ufo-sources
+        check-ufo
         check-universal
         generate-glyphdata
     
@@ -33,7 +33,7 @@ This has several subcommands, described in the help function:
                           by a space character. This is usually only used to 
                           generate the shell completion code.
 
-### fontbakery check-universal
+## fontbakery check-universal
 
 The "universal" profile contains checks for best practices agreed upon on the type design community.
 
@@ -43,17 +43,17 @@ The goal is to keep the vendor-specific profiles with only the minimal set of ch
 
 We should always consider contributing new checks (or moving existing ones) to this universal profile, if appropriate.
 
-### fontbakery check-adobefonts / check-fontbureau / check-fontwerk / check-notofonts
+## fontbakery check-adobefonts / check-fontbureau / check-fontwerk / check-notofonts
 
 Usage is analogous to the Google Fonts profile described below.
 
-### fontbakery check-googlefonts
+## fontbakery check-googlefonts
 
 This is the command used by foundries checking their projects for Google Fonts 
 
 
 
-It runs the checks that we use in the [`profiles/googlefonts.py` Python script](https://github.com/googlefonts/fontbakery/blob/main/Lib/fontbakery/profiles/googlefonts.py)
+It runs the checks that we use in the [`profiles/googlefonts.py` Python script](https://github.com/fonttools/fontbakery/blob/main/Lib/fontbakery/profiles/googlefonts.py)
 
 To run the checks on some fonts:
 
@@ -72,8 +72,8 @@ Run hand picked checks for all fonts in the `google/fonts` repository:
 
 
     $ fontbakery check-googlefonts \
-        -c com.google.fonts/check/xavgcharwidth \
-        -c com.google.fonts/check/font_version \
+        -c opentype/xavgcharwidth \
+        -c opentype/font_version \
         -n -o "*check" -g "*check" \
         path/to/fonts/{apache,ofl,ufl}/*/*.ttf
 
@@ -165,13 +165,13 @@ For checking the GFonts collection the script is used like this:
 
 This will create a folder called `check_results/` then run the `check-googlefonts` subcommand on every family, saving individual per-family reports in json format into subdirectories.
 
-### fontbakery check-fontval
+## fontbakery check-fontval
 
 This is a wrapper around the Microsoft Font Validator.
 
 Usage is similar to the check-googlefonts command described above.
 
-### Configuration file
+## Configuration file
 
 Some command-line parameters can be configured in a configuration file.
 This may be in TOML or YAML format, and the name of this file is passed in
@@ -185,9 +185,8 @@ configuration file:
 
 ```
 explicit_checks = [
-    'com.google.fonts/check/family/underline_thickness',
-    'com.google.fonts/check/family/panose_proportion',
-    'com.google.fonts/check/family/panose_familytype',
+    'opentype/family/underline_thickness',
+    'opentype/family/panose_familytype',
 ]
 ```
 
@@ -198,26 +197,21 @@ explicit_checks = [
 Additionally, the configuration file can be used to replace the status of
 particular checks. To do this, you will need to know the *message ID*,
 which is reported with the result. For example, when the
-`com.google.fonts/check/mandatory_glyphs` check reports that the `.notdef`
+`mandatory_glyphs` check reports that the `.notdef`
 glyph does not contain any outlines, it reports the message ID `empty` and
 a `WARN` status. To replace this status and have it return a `FAIL` instead,
 place this in the configuration file (if you are using YAML format):
 
 ```
 overrides:
-  com.google.fonts/check/mandatory_glyphs:
+  mandatory_glyphs:
     empty: FAIL
 ```
 
-Individual checks and profiles may give semantics to additional configuration values; the whole configuration file is passed to checks which request access to it.
+Individual checks and profiles may give semantics to additional configuration values;
+the whole configuration file is passed to checks which request access to it.
+Currently supported values include:
 
-#### Old Command Line Tools
-
-Since November 2017 (v0.3.3) Font Bakery is solely focused on checking fonts.
-Before that (up to v0.3.2) it also provided some auxiliary scripts for fixing fonts. 
-
-Those tools are now a separate project, Google Fonts Tools, maintained at <https://github.com/googlefonts/tools> and packaged at <https://pypi.python.org/pypi/gftools>
-
-Installing the latest version of the auxiliary scripts should be as easy as:
-
-    pip install gftools --upgrade
+- `is_icon_font`: A boolean value stating whether the fonts provided are icon fonts.
+  (overriding a check on the PANOSE values of those fonts) Certain checks will be
+  skipped for icon fonts.

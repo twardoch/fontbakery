@@ -16,13 +16,34 @@
 import os
 import subprocess
 import sys
+from typing import Optional
+from copy import deepcopy
 
+from fontTools.pens.basePen import BasePen
 from fontTools.ttLib import TTFont
-from fontTools.unicodedata import ot_tag_to_script
-from typing import Text, Optional
-from fontbakery.constants import NO_COLORS_THEME, DARK_THEME, LIGHT_THEME
-from ufo2ft.constants import INDIC_SCRIPTS, USE_SCRIPTS
-from vharfbuzz import Vharfbuzz
+import rich
+
+from fontbakery.constants import (
+    NO_COLORS_THEME,
+    DARK_THEME,
+    LIGHT_THEME,
+    PANOSE_Family_Type,
+)
+
+
+def exit_with_install_instructions(profile_name):
+    sys.exit(
+        f"\nTo run the {profile_name} profile, one needs to install\n"
+        f"fontbakery with the '{profile_name}' extra, like this:\n\n"
+        f"    python -m pip install -U 'fontbakery[{profile_name}]'\n\n"
+    )
+
+
+def remove_white_space(s):
+    s = s.replace(" ", "")
+    s = s.replace("\t", "")
+    s = s.replace("\n", "")
+    return s
 
 
 # TODO: this should be part of FontBakeryCheck and check.conditions
@@ -31,82 +52,7 @@ def is_negated(name):
     stripped = name.strip()
     if stripped.startswith("not "):
         return True, stripped[4:].strip()
-    if stripped.startswith("!"):
-        return True, stripped[1:].strip()
     return False, stripped
-
-
-def colorless_len(str):
-    import re
-
-    return len(re.sub("\x1b(\\[[0-9;]+|\\].+)m", "", str))
-
-
-def text_flow(
-    content,
-    width=80,
-    indent=0,
-    left_margin=0,
-    right_margin=0,
-    first_line_indent=0,
-    space_padding=False,
-    text_color="{}".format,
-):  # pylint: disable=consider-using-f-string
-    result = []
-    line_num = 0
-    for line in content.split("\n"):
-        _indent = indent
-        _width = width - right_margin
-
-        if line.strip() == "":
-            if space_padding:
-                result.append(" " * _indent + text_color(" " * width))
-            continue
-
-        words = line.split(" ")
-        while words:
-            line_num += 1
-            if line_num == 1:
-                if left_margin > -first_line_indent:
-                    inside_indent = " " * (left_margin + first_line_indent)
-                else:
-                    inside_indent = ""
-            else:
-                inside_indent = " " * left_margin
-            this_line = inside_indent + words.pop(0)
-
-            if colorless_len(this_line) > _width:
-                # let's see what we can do to make it fit
-                if "/" in this_line:
-                    # here we feed-back chunks of a URL
-                    # into words if it overflows the block
-                    chunks = this_line.split("/")
-                    new_line = chunks.pop(0)
-                    while chunks:
-                        next_len = (
-                            colorless_len(new_line) + 1 + colorless_len(chunks[0])
-                        )
-                        if next_len >= _width:
-                            break
-                        new_line += "/" + chunks.pop(0)
-                    this_line = new_line
-                    words.insert(0, "/" + "/".join(chunks))
-                else:
-                    # not sure what else to do,
-                    # so we'll simply cut the long word
-                    words.insert(0, this_line[_width:])  # word overflow chunk
-                    this_line = this_line[:_width]  # line with chopped word leftover
-
-            while words and (
-                colorless_len(this_line) + 1 + colorless_len(words[0]) <= _width
-            ):
-                this_line += " " + words.pop(0)
-
-            if space_padding:
-                # pad the line with spaces to fit the block width:
-                this_line += " " * (width - colorless_len(this_line))
-            result.append(" " * _indent + text_color(this_line))
-    return "\n".join(result)
 
 
 def get_apple_terminal_bg_color():
@@ -115,9 +61,12 @@ def get_apple_terminal_bg_color():
     line_1 = 'tell application "Terminal"'
     line_2 = "    get background color of selected tab of window 1"
     line_3 = "end tell"
-    output = subprocess.check_output(
-        ["osascript", "-e", line_1, "-e", line_2, "-e", line_3], text=True
-    )
+    output = subprocess.run(
+        ["osascript", "-e", line_1, "-e", line_2, "-e", line_3],
+        text=True,
+        check=True,
+        stdout=subprocess.PIPE,
+    ).stdout
     return output.strip()
 
 
@@ -145,7 +94,7 @@ def get_theme(args):
         # terminal app. Default to the light-theme only if we're sure that the terminal
         # app is Apple's Terminal and its background color is indeed white.
         return LIGHT_THEME if apple_terminal_bg_is_white() else DARK_THEME
-    # For orther systems like GNU+Linux and Windows, a dark terminal seems to be more common.
+    # For orther systems like GNU+Linux and Windows, a dark terminal may be more common.
     return DARK_THEME
 
 
@@ -174,38 +123,17 @@ def unindent_and_unwrap_rationale(rationale, checkid=None):
     return f"\n{content.strip()}\n"
 
 
-def html5_collapsible(summary, details) -> str:
-    """Return nestable, collapsible <detail> tag for check grouping and sub-
-    results."""
-
-    return f"<details><summary>{summary}</summary><div>{details}</div></details>"
-
-
 def split_camel_case(camelcase):
-    result = []
-    word = ""
-    for char in camelcase:
-        if char.isupper():
-            if word != "":
-                result.append(word)
-            word = char
-        else:
-            word += char
+    chars = []
+    for i, char in enumerate(camelcase):
+        if char.isupper() and i > 0:
+            chars.append(" ")
+        chars.append(char)
 
-    if word != "":
-        result.append(word)
-    return " ".join(result)
+    return "".join(chars)
 
 
-def suffix(font):
-    filename = os.path.basename(font)
-    basename = os.path.splitext(filename)[0]
-    s = basename.split("-")
-    s.pop(0)
-    return "-".join(s)
-
-
-def pretty_print_list(config, values, shorten=10, sep=", ", glue="and"):
+def pretty_print_list(config, values, shorten=10, sep=", ", glue=" and ", quiet=False):
     if len(values) == 1:
         return str(values[0])
 
@@ -214,14 +142,13 @@ def pretty_print_list(config, values, shorten=10, sep=", ", glue="and"):
 
     if shorten and len(values) > shorten + 2:
         joined_items_str = sep.join(map(str, values[:shorten]))
-        return (
-            f"{joined_items_str} {glue} {len(values) - shorten} more.\n"
-            f"\n"
-            f"Use -F or --full-lists to disable shortening of long lists."
-        )
+        msg = f"{joined_items_str}{glue}{len(values) - shorten} more."
+        if not quiet:
+            msg += "\n\nUse -F or --full-lists to disable shortening of long lists."
+        return msg
     else:
         joined_items_str = sep.join(map(str, values[:-1]))
-        return f"{joined_items_str} {glue} {str(values[-1])}"
+        return f"{joined_items_str}{glue}{str(values[-1])}"
 
 
 def bullet_list(config, items, bullet="-", indentation="\t"):
@@ -229,7 +156,7 @@ def bullet_list(config, items, bullet="-", indentation="\t"):
         config,
         items,
         sep=f"\n\n{indentation}{bullet} ",
-        glue=f"\n\n{indentation}{bullet}",
+        glue=f"\n\n{indentation}{bullet} ",
     )
 
 
@@ -260,14 +187,8 @@ def markdown_table(items):
 def get_regular(fonts):
     # TODO: Maybe also support getting a regular instance from a variable font?
     for font in fonts:
-        if "-Regular.ttf" in font:
+        if "-Regular.ttf" in font.file:
             return font
-
-
-def get_absolute_path(p):
-    if not os.path.isabs(p):
-        p = os.path.abspath(p)
-    return p
 
 
 def filesize_formatting(s):
@@ -325,6 +246,12 @@ def name_entry_id(name):
     )  # pylint: disable=consider-using-f-string
 
 
+def remove_cmap_entry(font, cp):
+    """Helper method that removes a codepoint entry from all the tables in cmap."""
+    for subtable in font["cmap"].tables:
+        subtable.cmap.pop(cp, None)
+
+
 def get_glyph_name(font: TTFont, codepoint: int) -> Optional[str]:
     next_best_cmap = font.getBestCmap()
 
@@ -369,7 +296,7 @@ def get_font_glyph_data(font):
             subtable = font["cmap"].tables[0]
 
         cmap = subtable.cmap
-    except:
+    except (AttributeError, IndexError, KeyError):
         return None
 
     cmap_reversed = dict(zip(cmap.values(), cmap.keys()))
@@ -382,30 +309,6 @@ def get_font_glyph_data(font):
                 {"unicode": uni_glyph, "name": glyph_name, "contours": {contours}}
             )
     return font_data
-
-
-def get_Protobuf_Message(klass, path):
-    from google.protobuf import text_format
-
-    message = klass()
-    text_data = open(path, "rb").read()
-    text_format.Merge(text_data, message)
-    return message
-
-
-def get_FamilyProto_Message(path):
-    from fontbakery.fonts_public_pb2 import FamilyProto
-
-    return get_Protobuf_Message(FamilyProto, path)
-
-
-def get_DesignerInfoProto_Message(text_data):
-    from fontbakery.designers_pb2 import DesignerInfoProto
-    from google.protobuf import text_format
-
-    message = DesignerInfoProto()
-    text_format.Merge(text_data, message)
-    return message
 
 
 def check_bit_entry(ttFont, table, attr, expected, bitmask, bitname):
@@ -447,7 +350,7 @@ def download_file(url):
             )
 
 
-def cff_glyph_has_ink(font: TTFont, glyph_name: Text) -> bool:
+def cff_glyph_has_ink(font: TTFont, glyph_name: str) -> bool:
     if "CFF2" in font:
         top_dict = font["CFF2"].cff.topDictIndex[0]
     else:
@@ -461,7 +364,7 @@ def cff_glyph_has_ink(font: TTFont, glyph_name: Text) -> bool:
     return False
 
 
-def ttf_glyph_has_ink(font: TTFont, name: Text) -> bool:
+def ttf_glyph_has_ink(font: TTFont, name: str) -> bool:
     glyph = font["glyf"].glyphs[name]
     glyph.expand(font["glyf"])
 
@@ -527,7 +430,7 @@ def compute_unicoderange_bits(ttFont):
     return result
 
 
-def glyph_has_ink(font: TTFont, name: Text) -> bool:
+def glyph_has_ink(font: TTFont, glyph_name: str) -> bool:
     """Checks if specified glyph has any ink.
 
     That is, that it has at least one defined contour associated.
@@ -539,9 +442,9 @@ def glyph_has_ink(font: TTFont, name: Text) -> bool:
         True if the font has at least one contour associated with it.
     """
     if "glyf" in font:
-        return ttf_glyph_has_ink(font, name)
+        return ttf_glyph_has_ink(font, glyph_name)
     elif ("CFF " in font) or ("CFF2" in font):
-        return cff_glyph_has_ink(font, name)
+        return cff_glyph_has_ink(font, glyph_name)
     else:
         raise Exception("Could not find 'glyf', 'CFF ', or 'CFF2' table.")
 
@@ -559,35 +462,6 @@ def filenames_ending_in(suffix, root):
         if os.path.isdir(fullpath):
             filenames.extend(filenames_ending_in(suffix, fullpath))
     return filenames
-
-
-def add_check_overrides(checkids, profile_tag, overrides):
-    """
-    Overridden checkids have a suffix identifying the specific
-    profile that customize their behaviour.
-
-    This helper function adds them to the list of checks and
-    ensures the original check is not redundantly listed.
-    """
-
-    # First we add the overridden check ids:
-    checkids += [f"{checkid}:{profile_tag}" for checkid in overrides]
-
-    # But then we also remove the original check ids that
-    # may have also been included from the original profile:
-    checkids[:] = [checkid for checkid in checkids if checkid not in overrides]
-    return checkids
-
-
-def can_shape(ttFont, text, parameters=None):
-    """
-    Returns true if the font can render a text string without any
-    .notdef characters.
-    """
-    filename = ttFont.reader.file.name
-    vharfbuzz = Vharfbuzz(filename)
-    buf = vharfbuzz.shape(text, parameters)
-    return all(g.codepoint != 0 for g in buf.glyph_infos)
 
 
 def all_kerning(ttFont):
@@ -634,27 +508,17 @@ def all_kerning(ttFont):
     return rules
 
 
-def is_complex_shaper_font(ttFont):
-    for table in ["GSUB", "GPOS"]:
-        if table not in ttFont:
-            continue
-        if not ttFont[table].table.ScriptList:
-            continue
-        for rec in ttFont[table].table.ScriptList.ScriptRecord:
-            script = ot_tag_to_script(rec.ScriptTag)
-            if script in USE_SCRIPTS or script in INDIC_SCRIPTS:
-                return True
-            if script in ["Khmr", "Mymr", "Hang"]:
-                return True
-    return False
-
-
 def iterate_lookup_list_with_extensions(ttFont, table, callback, *args):
     """Iterates over the lookup list of a font's GSUB/GPOS table, calling
     the callback with the lookup and the provided arguments, but descending
     into Extension subtables."""
     if table not in ttFont or not ttFont[table].table.LookupList:
         return
+
+    # This function mutates the TTF; deep copy to avoid this, and so avoid
+    # issues with concurrent tests that also use ttFont.
+    # See https://github.com/fonttools/fontbakery/issues/4834
+    ttFont = deepcopy(ttFont)
 
     extension_type = 9 if table == "GPOS" else 7
 
@@ -673,9 +537,6 @@ def axis(ttFont, tag):
     for axis in ttFont["fvar"].axes:
         if axis.axisTag == tag:
             return axis
-
-
-from fontTools.pens.basePen import BasePen
 
 
 class PointsPen(BasePen):
@@ -711,22 +572,291 @@ class PointsPen(BasePen):
     def highestPoint(self):
         highest = None
         for p in self.points:
-            if (
-                highest is None
-                or p[1] > highest[1]  # pylint: disable=unsubscriptable-object
-            ):
+            if highest is None or p[1] > highest[1]:  # pylint: disable=E1136
                 highest = p
         return highest
 
     def lowestPoint(self):
         lowest = None
         for p in self.points:
-            if (
-                lowest is None
-                or p[1] < lowest[1]  # pylint: disable=unsubscriptable-object
-            ):
+            if lowest is None or p[1] < lowest[1]:  # pylint: disable=E1136
                 lowest = p
         return lowest
 
     def _addComponent(self, glyphName, transformation):
         self.glyphSet[glyphName].draw(self)
+
+
+class IndentedParagraph:
+    def __init__(self, renderable, left=4, right=0, first=None):
+        self.renderable = renderable
+        self.left = left
+        self.right = right
+        if first is not None:
+            self.first = first
+        else:
+            self.first = self.left
+
+    def __rich_console__(self, console, options):
+        style = console.get_style("none")
+        width = options.max_width
+        render_options = options.update_width(width - self.left - self.right)
+        lines = console.render_lines(
+            self.renderable, render_options, style=style, pad=True
+        )
+        _Segment = rich.segment.Segment
+
+        left = _Segment(" " * self.left, style) if self.left else None
+        first = _Segment(" " * self.first, style) if self.left else None
+        right = (
+            [_Segment(f'{" " * self.right}', style), _Segment.line()]
+            if self.right
+            else [_Segment.line()]
+        )
+        for ix, line in enumerate(lines):
+            if ix == 0:
+                yield first
+            else:
+                yield left
+            yield from line
+            yield from right
+
+
+def keyword_in_full_font_name(ttFont, keyword):
+    from fontbakery.constants import NameID
+
+    for entry in ttFont["name"].names:
+        if (
+            entry.nameID == NameID.FULL_FONT_NAME
+            and keyword in entry.string.decode(entry.getEncoding()).lower().split()
+        ):
+            return True
+    return False
+
+
+def bold_adjacent_styles_in_full_font_name(ttFont):
+    from fontbakery.constants import NameID
+
+    for entry in ttFont["name"].names:
+        if entry.nameID == NameID.FULL_FONT_NAME and any(
+            x in entry.string.decode(entry.getEncoding()).lower()
+            for x in [
+                "extra bold",
+                "extrabold",
+                "semi bold",
+                "semibold",
+                "demi bold",
+                "demibold",
+            ]
+        ):
+            return True
+    return False
+
+
+def show_inconsistencies(dictionary, config):
+    """Display an 'inconsistencies dictionary' as a bullet list. Turns:
+
+        { "value1": ["file1", "file2"], "value2": ["file3"] }
+
+    into
+
+        - value1: file1 and file2
+        - value2: file3
+
+    """
+    return bullet_list(
+        config,
+        [
+            f"{value}: {pretty_print_list(config, files)}"
+            for value, files in dictionary.items()
+        ],
+    )
+
+
+def image_dimensions(filename):
+    if filename.lower().endswith(".png"):
+        data = open(filename, "rb").read(24)
+        if data[0:4] != b"\x89PNG" and data[12:16] != b"IHDR":
+            return None  # Does not look like a PNG!
+
+        w = data[16]
+        w = w << 8 | data[17]
+        w = w << 8 | data[18]
+        w = w << 8 | data[19]
+
+        h = data[20]
+        h = h << 8 | data[21]
+        h = h << 8 | data[22]
+        h = h << 8 | data[23]
+        return w, h
+
+    elif filename.lower().endswith(".gif"):
+        data = open(filename, "rb").read(10)
+        if data[0:4] != b"GIF8":
+            return None  # Does not look like a GIF!
+
+        w = data[7]
+        w = w << 8 | data[6]
+
+        h = data[9]
+        h = h << 8 | data[8]
+        return w + 1, h + 1
+
+    else:
+        return None  # some other file format
+
+
+def can_shape(ttFont, text, parameters=None):
+    """
+    Returns true if the font can render a text string without any
+    .notdef characters.
+    """
+    from vharfbuzz import Vharfbuzz
+
+    filename = ttFont.reader.file.name
+    vharfbuzz = Vharfbuzz(filename)
+    buf = vharfbuzz.shape(text, parameters)
+    return all(g.codepoint != 0 for g in buf.glyph_infos)
+
+
+def get_family_name(ttFont):
+    """
+    Get the family name from the name table.
+
+    TODO: For now, this is just name ID 1. It should be expanded to at least
+    check IDs 16 & 21, and ideally do the whole font differentiator heuristic.
+    """
+    family_name = ttFont["name"].getName(1, 3, 1, 0x0409)
+    if family_name is None:
+        return None
+    return family_name.toUnicode()
+
+
+def get_subfamily_name(ttFont):
+    """
+    Get the subfamily name from the name table.
+
+    TODO: For now, this is just name ID 2. It should be expanded to at least
+    check IDs 17 & 22, and ideally do the whole font differentiator heuristic.
+    """
+    subfamily_name = ttFont["name"].getName(2, 3, 1, 0x0409)
+    if subfamily_name is None:
+        return None
+    return subfamily_name.toUnicode()
+
+
+def feature_tags(ttFont):
+    in_this_font = set()
+    for table in ["GSUB", "GPOS"]:
+        if ttFont.get(table) and ttFont[table].table.FeatureList:
+            for fr in ttFont[table].table.FeatureList.FeatureRecord:
+                in_this_font.add(fr.FeatureTag)
+    return in_this_font
+
+
+def language_tags(ttFont):
+    in_this_font = set()
+    for table in ["GSUB", "GPOS"]:
+        if ttFont.get(table) and ttFont[table].table.ScriptList:
+            for fr in ttFont[table].table.ScriptList.ScriptRecord:
+                for lsr in fr.Script.LangSysRecord:
+                    in_this_font.add(lsr.LangSysTag)
+    return in_this_font
+
+
+def script_tags(ttFont):
+    in_this_font = set()
+    for table in ["GSUB", "GPOS"]:
+        if ttFont.get(table) and ttFont[table].table.ScriptList:
+            for fr in ttFont[table].table.ScriptList.ScriptRecord:
+                in_this_font.add(fr.ScriptTag)
+    return in_this_font
+
+
+def get_mark_class_glyphnames(ttFont):
+    from fontbakery.constants import GlyphClass
+
+    class_defs = ttFont["GDEF"].table.GlyphClassDef.classDefs.items()
+    return {name for (name, value) in class_defs if value == GlyphClass.MARK}
+
+
+def is_non_spacing_mark_char(charcode):
+    from fontTools import unicodedata
+
+    category = unicodedata.category(chr(charcode))
+    if category.startswith("C"):
+        # skip control characters
+        return None
+    else:
+        # Non spacing marks either have the Unicode General_category:
+        # Mn, Nonspacing_Mark
+        # Me, Enclosing_Mark
+        # Characters with the category Mc, Spacing_Mark should not be considered
+        # as non spacing marks.
+        return category in ("Mn", "Me")
+
+
+def get_advance_width_for_char(ttFont, ch):
+    cp = ord(ch)
+    cmap = ttFont.getBestCmap()
+    if cp not in cmap:
+        return None
+    return ttFont["hmtx"][cmap[cp]][0]
+
+
+def unicoderange(ttFont):
+    """Get an integer bitmap representing the UnicodeRange fields in the os/2 table."""
+    os2 = ttFont["OS/2"]
+    return (
+        os2.ulUnicodeRange1
+        | os2.ulUnicodeRange2 << 32
+        | os2.ulUnicodeRange3 << 64
+        | os2.ulUnicodeRange4 << 96
+    )
+
+
+def is_icon_font(ttFont, config):
+    return config.get("is_icon_font") or (
+        "OS/2" in ttFont
+        and ttFont["OS/2"].panose.bFamilyType == PANOSE_Family_Type.LATIN_SYMBOL
+    )
+
+
+def git_rootdir(family_dir):
+    if not family_dir:
+        return None
+
+    root_dir = None
+
+    try:
+        git_cmd = ["git", "-C", family_dir, "rev-parse", "--show-toplevel"]
+        git_output = subprocess.check_output(git_cmd, stderr=subprocess.STDOUT)
+        root_dir = git_output.decode("utf-8").strip()
+
+    except (OSError, IOError, subprocess.CalledProcessError):
+        pass  # Not a git repo, or git is not installed.
+
+    return root_dir
+
+
+def typo_metrics_enabled(ttFont):
+    return ttFont["OS/2"].fsSelection & 0b10000000 > 0
+
+
+def close_but_not_on(value_expected, value_true, tolerance):
+    if value_expected == value_true:
+        return False
+    if abs(value_expected - value_true) <= tolerance:
+        return True
+    return False
+
+
+def mark_glyphs(ttFont):
+    marks = []
+    if "GDEF" in ttFont and ttFont["GDEF"].table.GlyphClassDef:
+        class_def = ttFont["GDEF"].table.GlyphClassDef.classDefs
+        glyphOrder = ttFont.getGlyphOrder()
+        for name in glyphOrder:
+            if name in class_def and class_def[name] == 3:
+                marks.append(name)
+    return marks

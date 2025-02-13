@@ -14,7 +14,6 @@ import requests
 import argparse
 import subprocess
 import tempfile
-from urllib.parse import urlparse
 import os
 import json
 import shutil
@@ -78,7 +77,7 @@ def main():
         ["fontbakery", "check-googlefonts"]
         + fonts
         + ["--ghmarkdown", gh_report]
-        + ["-x", "com.google.fonts/check/has_license"]
+        + ["-x", "googlefonts/family/has_license"]
         + ["-l", "FAIL"]
     )
 

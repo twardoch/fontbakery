@@ -12,6 +12,18 @@ message FamilyProto {
   required string name = 1;
   required string designer = 2;
   required string license = 3;
+
+  // A mutually-exclusive category for each font. The categories are: Serif,
+  // Sans Serif, Display, Handwriting and Monospace. Being mutually exclusive is
+  // a significant deficiency as, for example, most Display fonts are typically
+  // Serif or Sans Serif and that is not captured.
+  //
+  // For searching, this field is replaced by stroke and classifications (see
+  // below), however, this field persists (it's required after all) and will
+  // continue to be populated in the onboarding process.
+  //
+  // This is repeated field, yet Google Fonts only uses the last entry so
+  // multiple entries should be avoided.
   repeated string category = 4;  // Only the LAST value is used by Google Fonts
   required string date_added = 5;
   repeated FontProto fonts = 6;
@@ -33,7 +45,17 @@ message FamilyProto {
   // The script to use when picking sample text. See the Script spanner table.
   optional string primary_script = 21;
 
-  // Next = 22
+  optional string primary_language = 22;
+
+  // Stroke of the letter forms: serif, sans serif, etc. Stroke is mutually
+  // exclusive. The values are the string names from the Stroke enum or the
+  // empty string.
+  optional string stroke = 23;
+
+  // A family's broad classifications: display, handwriting, monospace, etc.
+  // The values are the string names from the Classification enum.
+  repeated string classifications = 25;
+  // Next = 25
 }
 
 message FontProto {
@@ -60,8 +82,11 @@ message SourceProto {
   optional string branch = 5;
   optional string commit = 2;
   optional string archive_url = 3;
+  optional string config_yaml =
+      6;  // See https://github.com/googlefonts/fontc/issues/1124
   repeated SourceFileProto files = 4;
-  // Next = 6
+
+  // Next = 7
 }
 
 // A file to take from source and where to put it in dest
@@ -109,6 +134,7 @@ message SampleTextProto {
   optional string specimen_32 = 10;
   optional string specimen_21 = 11;
   optional string specimen_16 = 12;
+  optional string note = 13;
 }
 
 message GlyphGroupProto {

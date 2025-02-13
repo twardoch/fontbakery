@@ -5,28 +5,9 @@ class FontBakeryRunnerError(Exception):
     pass
 
 
-class CircularDependencyError(FontBakeryRunnerError):
-    pass
-
-
-class APIViolationError(FontBakeryRunnerError):
-    def __init__(self, message, result, *args):
-        self.message = message
-        self.result = result
-        super().__init__(message, *args)
-
-
 class ProtocolViolationError(FontBakeryRunnerError):
     def __init__(self, message, *args):
         self.message = message
-        super().__init__(message, *args)
-
-
-class FailedCheckError(FontBakeryRunnerError):
-    def __init__(self, error, *args):
-        message = f"Failed with {type(error).__name__}: {error}"
-        self.error = error
-        self.traceback = "".join(traceback.format_tb(error.__traceback__))
         super().__init__(message, *args)
 
 
@@ -68,22 +49,6 @@ class FailedDependenciesError(FontBakeryRunnerError):
         self.error = error
         self.traceback = "".join(traceback.format_tb(error.__traceback__))
         super().__init__(message, *args)
-
-
-class SetupError(FontBakeryRunnerError):
-    pass
-
-
-class MissingValueError(FontBakeryRunnerError):
-    pass
-
-
-class CircularAliasError(FontBakeryRunnerError):
-    pass
-
-
-class NamespaceError(FontBakeryRunnerError):
-    pass
 
 
 class ValueValidationError(FontBakeryRunnerError):

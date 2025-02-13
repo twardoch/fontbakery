@@ -9,3 +9,6 @@ IBM
 STIX
 VT
 REM
+ADLaM
+AR
+SUSE
